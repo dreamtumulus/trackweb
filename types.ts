@@ -1,3 +1,4 @@
+
 export enum SourceType {
   WEBSITE = 'WEBSITE',
   FACEBOOK = 'FACEBOOK',
@@ -43,4 +44,10 @@ export interface GroundingMetadata {
       title?: string;
     };
   }[];
+}
+
+export interface ApiKeys {
+  gemini: string;
+  openrouter: string;
+  tavily: string;
 }

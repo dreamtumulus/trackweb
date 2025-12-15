@@ -2,16 +2,26 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import SourceItem from './components/SourceItem';
 import FeedCard from './components/FeedCard';
-import { Source, SourceType, CrawlStatus, CrawlResult } from './types';
+import { Source, SourceType, CrawlStatus, CrawlResult, ApiKeys } from './types';
 import { crawlSource } from './services/geminiService';
 
 const App: React.FC = () => {
   // --- State ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'sources' | 'settings'>('dashboard');
   
-  // API Key State (Persisted)
-  const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+  // API Keys State (Persisted)
+  const [apiKeys, setApiKeys] = useState<ApiKeys>(() => {
+    const saved = localStorage.getItem('app_api_keys');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    // Backward compatibility check
+    const oldGemini = localStorage.getItem('gemini_api_key');
+    return {
+      gemini: oldGemini || process.env.API_KEY || '',
+      openrouter: '',
+      tavily: ''
+    };
   });
 
   const [sources, setSources] = useState<Source[]>(() => {
@@ -54,14 +64,15 @@ const App: React.FC = () => {
   }, [results]);
 
   useEffect(() => {
-    localStorage.setItem('gemini_api_key', apiKey);
-  }, [apiKey]);
+    localStorage.setItem('app_api_keys', JSON.stringify(apiKeys));
+  }, [apiKeys]);
 
   // --- Logic ---
 
   const handleTriggerCrawl = useCallback(async (sourceId: string) => {
-    if (!apiKey) {
-      alert("请先在【系统设置】中配置 Gemini API Key");
+    const hasValidKey = apiKeys.gemini || apiKeys.tavily;
+    if (!hasValidKey) {
+      alert("请先在【系统设置】中配置 Gemini API Key 或 Tavily API Key");
       return;
     }
 
@@ -71,7 +82,7 @@ const App: React.FC = () => {
     if (!source) return;
 
     try {
-      const newItems = await crawlSource(source, apiKey);
+      const newItems = await crawlSource(source, apiKeys);
       
       setResults(prev => {
         const filteredNew = newItems.filter(newItem => 
@@ -98,7 +109,7 @@ const App: React.FC = () => {
         } : s
       ));
     }
-  }, [sources, apiKey]);
+  }, [sources, apiKeys]);
 
   // Scheduler Effect
   useEffect(() => {
@@ -166,7 +177,7 @@ const App: React.FC = () => {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-slate-800">最新舆情动态</h2>
         <div className="text-sm text-slate-500">
-          {!apiKey ? <span className="text-red-500 font-bold">⚠️ 请先配置 API Key</span> : "系统自动监控中"}
+          {!(apiKeys.gemini || apiKeys.tavily) ? <span className="text-red-500 font-bold">⚠️ 请先配置 API Key</span> : "系统自动监控中"}
         </div>
       </div>
       
@@ -215,37 +226,73 @@ const App: React.FC = () => {
   );
 
   const renderSettings = () => (
-    <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border p-8">
+    <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-sm border p-8">
       <h2 className="text-2xl font-bold text-slate-800 mb-6">系统设置</h2>
       
-      <div className="space-y-6">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <label className="block text-sm font-bold text-slate-800 mb-2">Gemini API Key (必填)</label>
-          <input 
-            type="password" 
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="AIzaSy..."
-            className="w-full border-slate-300 rounded-lg p-2.5 border focus:ring-2 focus:ring-yellow-400 outline-none"
-          />
-          <p className="text-xs text-slate-500 mt-2">
-            API Key 将安全存储在您的本地浏览器中。系统需要此 Key 才能运行搜索和分析。
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-blue-600 hover:underline ml-1">获取 Key</a>
-          </p>
+      <div className="space-y-8">
+        
+        {/* Gemini Section */}
+        <section className="bg-blue-50/50 border border-blue-100 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-3">
+             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">G</div>
+             <h3 className="font-bold text-slate-900">方案 A：Google Gemini (推荐)</h3>
+          </div>
+          <p className="text-sm text-slate-600 mb-4">使用 Google 官方 API，内置实时搜索 (Grounding)，效果最佳，配置最简单。</p>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Gemini API Key</label>
+            <input 
+              type="password" 
+              value={apiKeys.gemini}
+              onChange={(e) => setApiKeys({...apiKeys, gemini: e.target.value})}
+              placeholder="AIzaSy..."
+              className="w-full border-slate-300 rounded-lg p-2.5 border focus:ring-2 focus:ring-blue-400 outline-none bg-white"
+            />
+          </div>
+        </section>
+
+        <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-slate-200"></div>
+            <span className="flex-shrink-0 mx-4 text-slate-400 text-sm">或者</span>
+            <div className="flex-grow border-t border-slate-200"></div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">默认翻译目标语言</label>
-          <select className="w-full border-slate-300 rounded-lg p-2.5 border bg-slate-50">
-            <option>简体中文 (Simplified Chinese)</option>
-            <option>English</option>
-          </select>
-        </div>
+        {/* Alternative Stack */}
+        <section className="bg-slate-50 border border-slate-200 rounded-lg p-5">
+           <div className="flex items-center gap-2 mb-3">
+             <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">M</div>
+             <h3 className="font-bold text-slate-900">方案 B：组合模式 (Tavily + OpenRouter)</h3>
+          </div>
+          <p className="text-sm text-slate-600 mb-4">如果您没有 Gemini Key，可以使用 Tavily 进行搜索，搭配 OpenRouter 进行总结。</p>
+          
+          <div className="grid gap-4">
+            <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Tavily API Key (用于搜索/爬取)</label>
+                <input 
+                type="password" 
+                value={apiKeys.tavily}
+                onChange={(e) => setApiKeys({...apiKeys, tavily: e.target.value})}
+                placeholder="tvly-..."
+                className="w-full border-slate-300 rounded-lg p-2.5 border focus:ring-2 focus:ring-slate-400 outline-none bg-white"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">OpenRouter API Key (可选，用于增强总结)</label>
+                <input 
+                type="password" 
+                value={apiKeys.openrouter}
+                onChange={(e) => setApiKeys({...apiKeys, openrouter: e.target.value})}
+                placeholder="sk-or-..."
+                className="w-full border-slate-300 rounded-lg p-2.5 border focus:ring-2 focus:ring-slate-400 outline-none bg-white"
+                />
+                <p className="text-xs text-slate-400 mt-1">如果不填写 OpenRouter，将仅显示 Tavily 的简要搜索结果。</p>
+            </div>
+          </div>
+        </section>
+
         
         <div className="pt-6 border-t border-slate-100">
-           <h3 className="font-semibold text-slate-900 mb-2">关于系统</h3>
            <p className="text-sm text-slate-500 leading-relaxed">
-             本系统基于 <strong>Gemini 2.5 Flash</strong> 构建，利用 Google Search Grounding 能力实现全网舆情监控。
+             注意：所有 API Key 均存储在本地浏览器中，请确保您的网络环境安全。
            </p>
         </div>
       </div>
